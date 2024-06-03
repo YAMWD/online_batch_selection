@@ -16,6 +16,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader, random_split
 
 #from pylearn2.datasets.zca_dataset import ZCA_Dataset
 #from pylearn2.utils import serial
@@ -109,7 +111,8 @@ class Net(nn.Module):
         )
 
     def forward(self, x):
-        x = torch.from_numpy(x)
+        if not torch.is_tensor(x):
+            x = torch.from_numpy(x)
         x = self.conv1(x)
         x = self.conv2(x)
         x = x.view(-1, 512)
@@ -143,6 +146,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
     # Load the dataset
     print("Loading data...")
     X_train, y_train, X_val, y_val, X_test, y_test = load_dataset()
+    train_loader, validation_loader, test_loader = data_loading()
 
     network = Net()
 
@@ -153,22 +157,28 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
         optimizer = optim.Adam(network.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-08)
         algname = 'adam'
 
-
     def val_fn(model, input, targets):
         # Create a loss expression for validation/testing. The crucial difference
         # here is that we do a deterministic forward pass through the network,
         # disabling dropout layers.
         
-        targets = torch.from_numpy(targets)
+        if not torch.is_tensor(targets):
+            targets = torch.from_numpy(targets)
         model.eval()
         output = model(input)
-        test_loss = (-output.log() * F.one_hot(targets, num_classes = 10)).sum(dim=1).mean()
+        test_loss = CCE_loss_fn(output, targets)
 
         # As a bonus, also create an expression for the classification accuracy:
         test_acc = torch.mean(torch.eq(torch.argmax(output, dim=1), targets), dtype = torch.float)
         
         return test_loss, test_acc
     
+    def CCE_loss_fn(output, targets):
+        if not torch.is_tensor(targets):
+            targets = torch.from_numpy(targets)
+
+        return (-(output + 1e-5).log() * F.one_hot(targets, num_classes = 10)).sum(dim=1).mean()
+
     # Finally, launch the training loop.
     print("Starting training...")
 
@@ -214,14 +224,13 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
             bs = bs_begin * math.pow(mult_bs, epoch)
         bs = int(math.floor(bs))
 
-        fac = 1
         if (fac == 1):
-            for batch in iterate_minibatches(X_train, y_train, bs, shuffle=True):
+            for batch in train_loader:
                 inputs, targets = batch
                 optimizer.zero_grad()
                 network.train()
                 output = network(inputs)
-                loss = (-output.log() * F.one_hot(torch.from_numpy(targets), num_classes = 10)).sum(dim=1).mean()
+                loss = CCE_loss_fn(output, targets)
                 loss.backward()
                 optimizer.step()
         else:
@@ -269,7 +278,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
                 optimizer.zero_grad()
                 network.train()
                 output = network(inputs)
-                losses = (-output.log() * F.one_hot(torch.from_numpy(targets), num_classes = 10)).sum(dim=1)
+                losses = CCE_loss_fn(output, targets)
                 losses.backward()
                 optimizer.step()
                 meanloss = losses.mean()
@@ -308,7 +317,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
                             inputs, targets = batch
                             network.train()
                             output = network(inputs)
-                            losses = (-output.log() * F.one_hot(torch.from_numpy(targets), num_classes = 10)).sum(dim=1)
+                            losses = CCE_loss_fn(output, targets)
                             i = 0
                             for idx in indexes:
                                 bfs[idx][0] = losses[i]
@@ -403,6 +412,11 @@ def main():
     run_vals = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     alg_vals = [1, 2]
     pp_scenarios = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+    run_vals = [1]
+    alg_vals = [1]
+    pp_scenarios = [1]
+
     bs_vals = [64]
     for irun in run_vals:
         for bs in bs_vals:
@@ -425,6 +439,32 @@ def main():
 
                 for alg in alg_vals:
                     test('cnn', num_epochs, bs_begin, bs_end, fac_begin, fac_end, pp1, pp2, alg, adapt_type, irun)
+
+def data_loading(bs = 64, shuffle_train = True, shuffle_test = False):
+    # Define transformations for the training set, which includes normalization
+    transform = transforms.Compose([
+        transforms.ToTensor()
+    ])
+
+    # Load the full training set
+    full_train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
+
+    # Define the size of the validation set
+    validation_size = 10000
+    train_size = len(full_train_dataset) - validation_size
+
+    # Split the dataset into training and validation sets
+    train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size])
+
+    # Create DataLoaders for each set
+    train_loader = DataLoader(dataset=train_dataset, batch_size = bs, shuffle = shuffle_train)
+    validation_loader = DataLoader(dataset=validation_dataset, batch_size = bs, shuffle = shuffle_test)
+
+    # Load the test set
+    test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
+    test_loader = DataLoader(dataset=test_dataset, batch_size = bs, shuffle = shuffle_test)
+
+    return train_loader, validation_loader, test_loader
 
 if __name__ == '__main__':
     main()
