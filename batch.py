@@ -18,6 +18,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
+from torch.utils.data.sampler import Sampler
 
 #from pylearn2.datasets.zca_dataset import ZCA_Dataset
 #from pylearn2.utils import serial
@@ -142,14 +143,197 @@ def iterate_minibatches(inputs, targets, batchsize, shuffle=False):
             excerpt = slice(start_idx, start_idx + batchsize)
         yield inputs[excerpt], targets[excerpt]
 
+def regular_data_loading(bs = 64, shuffle_train = True, shuffle_test = False, device = 'cpu'):
+    # Define transformations for the training set, which includes normalization
+    transform = transforms.Compose([
+        transforms.ToTensor()
+    ])
+
+    # Load the full training set
+    full_train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
+
+    # Define the size of the validation set
+    validation_size = 10000
+    train_size = len(full_train_dataset) - validation_size
+
+    # Split the dataset into training and validation sets
+    train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size])
+
+    # Create DataLoaders for each set
+    train_loader = DataLoader(dataset = train_dataset, batch_size = bs, shuffle = shuffle_train)
+    validation_loader = DataLoader(dataset=validation_dataset, batch_size = bs, shuffle = shuffle_test)
+
+    # Load the test set
+    test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
+    test_loader = DataLoader(dataset=test_dataset, batch_size = bs, shuffle = shuffle_test)
+
+    return train_dataset, validation_dataset, test_dataset, train_loader, validation_loader, test_loader
+
+class RandomSampler(Sampler):
+    r"""Samples elements randomly, without replacement.
+    Arguments:
+        data_source (Dataset): dataset to sample from
+    """
+
+    def __init__(self, model, data_source, train_data, train_target, batch_size, sorting_evaluations_ago, sorting_evaluations_period, bfs, prob, sumprob, epoch):
+        self.model = model
+        self.data_source = data_source
+        self.batch_size = batch_size
+        self.data = train_data
+        self.data = torch.unsqueeze(self.data, 1)
+        # self.data = self.data.type(torch.cuda.FloatTensor)
+        self.target = train_target
+
+        self.sorting_evaluations_period = sorting_evaluations_period   # increase it if sorting is too expensive
+        self.sorting_evaluations_ago = sorting_evaluations_ago
+
+        self.bfs = bfs
+        # make bfs a update method
+        self.prob = prob
+        self.sumprob = sumprob
+        self.epoch = epoch
+
+        self.stop = 0
+        self.iter = 0
+
+        self.indexes = []
+
+    def get_scores(self):
+        output, feat = self.model.forward(self.data)
+        criterion = nn.CrossEntropyLoss(reduce=False)
+        loss = criterion(output, self.target)
+        return loss
+
+    def __iter__(self):
+        while (self.stop == 0):
+            self.indexes = []
+            wrt_sorted = 0
+            if (self.epoch > 0):
+                wrt_sorted = 1
+                if (self.sorting_evaluations_ago >= self.sorting_evaluations_period):
+                    self.bfs = self.bfs[self.bfs[:,0].argsort()[::-1]]
+                    self.sorting_evaluations_ago = 0
+
+            stop1 = 0
+            while (stop1 == 0):
+                index = self.iter
+                if (wrt_sorted == 1):
+                    randpos = min(random.random(), self.sumprob[-1])
+                    index = bisect_right(self.sumprob, randpos)  # O(log(ntraining)), cheap
+                self.indexes.append(index)
+                self.iter = self.iter + 1
+                if (len(self.indexes) == self.batch_size) or (self.iter == len(self.data_source)):
+                    stop1 = 1
+
+            self.sorting_evaluations_ago = self.sorting_evaluations_ago + self.batch_size
+            if (self.iter == len(self.data_source)):
+                # traversed the whole training dataset, proceed to the next epoch
+                self.stop = 1
+
+            idxs = []
+            for idx in self.indexes:
+                try:
+                    idxs.append(int(self.bfs[idx][1]))
+                except:
+                    import pdb; pdb.set_trace()
+            
+            yield idxs
+
+    def __len__(self):
+        return len(self.data_source)
+    
+class BatchSampler(Sampler):
+
+    def __init__(self, sampler, batch_size, drop_last):
+        self.sampler = sampler
+        self.batch_size = batch_size
+        self.drop_last = drop_last
+
+    def __iter__(self):
+        batch = []
+        for _, idx in enumerate(iter(self.sampler)):
+            batch = idx
+            yield batch
+
+        if len(batch) > 0 and not self.drop_last:
+            yield batch
+
+    def __len__(self):
+        return len(self.sampler) // self.batch_size
+    
+def sorted_data_loading(model, bs, bs_test, sorting_evaluations_ago, sorting_evaluations_period, bfs, prob, sumprob, epoch, shuffle_train = True, shuffle_test = False, device = 'cpu'):
+    # Define transformations for the training set, which includes normalization
+    transform = transforms.Compose([
+        transforms.ToTensor()
+    ])
+
+    # Load the full training set
+    full_train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
+
+    # Define the size of the validation set
+    validation_size = 10000
+    train_size = len(full_train_dataset) - validation_size
+
+    # Split the dataset into training and validation sets
+    train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size])
+
+    indices = train_dataset.indices
+    train_data = train_dataset.dataset.data[indices].to(device)
+    train_target = train_dataset.dataset.train_labels[indices].to(device)
+
+    sampler = RandomSampler(model, train_dataset, train_data, train_target, bs, sorting_evaluations_ago, sorting_evaluations_period, bfs, prob, sumprob, epoch)
+
+    batch_sampler = BatchSampler(sampler, bs, True)
+
+    # Create DataLoaders for each set
+    # attach the indices to the images itself
+    train_loader = DataLoader(dataset = train_dataset, batch_sampler = batch_sampler, num_workers = 0)
+    validation_loader = DataLoader(dataset=validation_dataset, batch_size = bs_test, shuffle = shuffle_test)
+
+    # Load the test set
+    test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
+    test_loader = DataLoader(dataset=test_dataset, batch_size = bs_test, shuffle = shuffle_test)
+
+    return train_dataset, validation_dataset, test_dataset, train_loader, validation_loader, test_loader
+
+def CCE_loss_fn(output, targets):
+    if not torch.is_tensor(targets):
+        targets = torch.from_numpy(targets)
+
+    return (-(output + 1e-5).log() * F.one_hot(targets, num_classes = 10)).sum(dim=1).mean()
+
+def CCE_losses_fn(output, targets):
+    if not torch.is_tensor(targets):
+        targets = torch.from_numpy(targets)
+
+    return (-(output + 1e-5).log() * F.one_hot(targets, num_classes = 10)).sum(dim=1)
+
+def val_fn(model, input, targets):
+    # Create a loss expression for validation/testing. The crucial difference
+    # here is that we do a deterministic forward pass through the network,
+    # disabling dropout layers.
+    
+    if not torch.is_tensor(targets):
+        targets = torch.from_numpy(targets)
+    model.eval()
+    output = model(input)
+    test_loss = CCE_loss_fn(output, targets)
+
+    # As a bonus, also create an expression for the classification accuracy:
+    test_acc = torch.mean(torch.eq(torch.argmax(output, dim=1), targets), dtype = torch.float)
+    
+    return test_loss, test_acc
+    
 def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_end=100, pp1 = 0, pp2 = 0, alg=1, adapt_type = 0, irun = 1):
     # Load the dataset
     print("Loading data...")
+
+    device = torch.device ("cuda:0" if torch.cuda.is_available () else "cpu")
+
+    network = Net().to(device)
+
     X_train, y_train, X_val, y_val, X_test, y_test = load_dataset()
-    train_loader, validation_loader, test_loader = data_loading()
-
-    network = Net()
-
+    
     if (alg == 1):  # adadelta with default parameters as given in lasagne
         optimizer = optim.Adadelta(network.parameters(), lr=1.0, rho=0.95, eps=1e-06)
         algname = 'adadelta'
@@ -157,62 +341,36 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
         optimizer = optim.Adam(network.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-08)
         algname = 'adam'
 
-    def val_fn(model, input, targets):
-        # Create a loss expression for validation/testing. The crucial difference
-        # here is that we do a deterministic forward pass through the network,
-        # disabling dropout layers.
-        
-        if not torch.is_tensor(targets):
-            targets = torch.from_numpy(targets)
-        model.eval()
-        output = model(input)
-        test_loss = CCE_loss_fn(output, targets)
-
-        # As a bonus, also create an expression for the classification accuracy:
-        test_acc = torch.mean(torch.eq(torch.argmax(output, dim=1), targets), dtype = torch.float)
-        
-        return test_loss, test_acc
-    
-    def CCE_loss_fn(output, targets):
-        if not torch.is_tensor(targets):
-            targets = torch.from_numpy(targets)
-
-        return (-(output + 1e-5).log() * F.one_hot(targets, num_classes = 10)).sum(dim=1).mean()
-
     # Finally, launch the training loop.
     print("Starting training...")
-
-    bfs = []                    # to store last known loss for each datapoint
-    ntraining = len(X_train)    # number of training datapoints
-    # bfs = [1e+10]*ntraining     # set last known loss to a big number
-    bfs = np.ndarray((ntraining,2))
-    l = 0
-    for l in range(0,ntraining):
-        bfs[l][0] = 1e+10
-        bfs[l][1] = l
-
-    prob = [None]*ntraining     # to store probabilies of selection, prob[i] for i-th ranked datapoint
-    sumprob = [None]*ntraining  # to store sum of probabilies from 0 to i-th ranked point
-
-    # sort_index = np.argsort(bfs)[::-1]  # ind
 
     filename = "pytorch_data/" + algname + "_{}_{}_{}_{}_{}_{}".format(irun, bs_end, pp1, pp2, fac_begin, fac_end) + ".txt"
 
     mult_bs = math.exp(math.log(bs_end/bs_begin)/num_epochs)
     mult_fac = math.exp(math.log(fac_end/fac_begin)/num_epochs)
 
+    bfs = []                    # to store last known loss for each datapoint
+    ntraining = len(X_train)    # number of training datapoints
+    bfs = np.ndarray((ntraining, 2))
+    l = 0
+    for l in range(0, ntraining):
+        bfs[l][0] = 1e+10
+        bfs[l][1] = int(l)
+
+    prob = [None] * ntraining     # to store probabilies of selection, prob[i] for i-th ranked datapoint
+    sumprob = [None] * ntraining  # to store sum of probabilies from 0 to i-th ranked point
+
     sorting_evaluations_period = 100   # increase it if sorting is too expensive
-    sorting_evaluations_ago = 2*sorting_evaluations_period
+    sorting_evaluations_ago = 2 * sorting_evaluations_period
 
-
-
+    lastii = 0
+    curii = 0
+    
     start_time0 = time.time()
     wasted_time = 0         # time wasted on computing training and validation losses/errors
     best_validation_error = 1e+10
     best_predicted_test_error = 1e+10
     myfile=open(filename, 'w+')
-    lastii = 0
-    curii = 0
 
     # We iterate over epochs:
     for epoch in range(num_epochs):
@@ -225,6 +383,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
         bs = int(math.floor(bs))
 
         if (fac == 1):
+            train_dataset, validation_dataset, test_dataset, train_loader, validation_loader, test_loader = regular_data_loading(bs = bs)
             for batch in train_loader:
                 inputs, targets = batch
                 optimizer.zero_grad()
@@ -234,69 +393,44 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
                 loss.backward()
                 optimizer.step()
         else:
-            mult = math.exp(math.log(fac)/ntraining)
+            mult = math.exp(math.log(fac) / ntraining)
+
             for i in range(0, ntraining):
                 if (i == 0):    prob[i] = 1.0
-                else:           prob[i] = prob[i-1]/mult
+                else:           prob[i] = prob[i - 1] / mult
             psum = sum(prob)
-            prob =[v/psum for v in prob]
+            prob =[v / psum for v in prob]
             for i in range(0, ntraining):
                 if (i == 0):    sumprob[i] = prob[i]
                 else:           sumprob[i] = sumprob[i-1] + prob[i]
 
-            stop = 0
-            iter = 0
+            train_dataset, validation_dataset, test_dataset, train_loader, validation_loader, test_loader = sorted_data_loading(network, bs, 500, sorting_evaluations_ago, sorting_evaluations_period, bfs, prob, sumprob, epoch)
 
-            while (stop == 0):
-                indexes = []
-                wrt_sorted = 0
-                if (epoch > 0):
-                    wrt_sorted = 1
-                    if (sorting_evaluations_ago >= sorting_evaluations_period):
-                        bfs = bfs[bfs[:,0].argsort()[::-1]]
-                        sorting_evaluations_ago = 0
-
-                stop1 = 0
-                while (stop1 == 0):
-                    index = iter
-                    if (wrt_sorted == 1):
-                        randpos = min(random.random(), sumprob[-1])
-                        index = bisect_right(sumprob, randpos)  # O(log(ntraining)), cheap
-                    indexes.append(index)
-                    iter = iter + 1
-                    if (len(indexes) == bs) or (iter == len(X_train)):
-                        stop1 = 1
-                sorting_evaluations_ago = sorting_evaluations_ago + bs
-                if (iter == len(X_train)):
-                    stop = 1
-
-                idxs = []
-                for idx in indexes:
-                    idxs.append(bfs[idx][1])
-                batch = X_train[idxs], y_train[idxs]
+            for batch in train_loader:
                 inputs, targets = batch
                 optimizer.zero_grad()
                 network.train()
                 output = network(inputs)
-                losses = CCE_loss_fn(output, targets)
-                losses.backward()
-                optimizer.step()
+                losses = CCE_losses_fn(output, targets)
                 meanloss = losses.mean()
+                meanloss.backward()
+                optimizer.step()
                 i = 0
-                for idx in indexes:
-                    bfs[idx][0] = losses[i]
+                indice = train_loader.batch_sampler.sampler.indexes
+                for idx in indice:
+                    bfs[idx][0] = losses[i] # update loss for corresponding datapoint, rely on the computed index, so index cannot be wrapped into a sampler that is invisible to the training loop
                     i = i + 1
 
                 #if (1):
-                curii = curii + len(idxs)
+                curii = curii + len(indice)
 
                 if (pp1 > 0):
-                    if (curii - lastii > ntraining/pp1):
+                    if (curii - lastii > ntraining / pp1):
                         lastii = curii
                         stopp = 0
                         iii = 0
                         bs_here = 500
-                        maxpt = int(len(X_train)*pp2)
+                        maxpt = int(len(X_train) * pp2)
                         while (stopp == 0):
                             indexes = []
                             stop1 = 0
@@ -313,11 +447,14 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
                             idxs = []
                             for idx in indexes:
                                 idxs.append(bfs[idx][1])
-                            batch = X_train[idxs], y_train[idxs]
-                            inputs, targets = batch
-                            network.train()
+
+                            inputs = train_loader.dataset.dataset.train_data[idxs]
+                            targets = train_loader.dataset.dataset.train_labels[idxs]
+
+                            inputs = torch.unsqueeze(inputs, 1).to(torch.float)
+                            network.eval()
                             output = network(inputs)
-                            losses = CCE_loss_fn(output, targets)
+                            losses = CCE_losses_fn(output, targets)
                             i = 0
                             for idx in indexes:
                                 bfs[idx][0] = losses[i]
@@ -325,12 +462,20 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
 
 
         if (1): # otherwise report time only
+
+            train_loader = DataLoader(dataset = train_dataset, batch_size = bs, shuffle = False)
+
+            validation_loader = DataLoader(dataset=validation_dataset, batch_size = bs, shuffle = False)
+
+            test_loader = DataLoader(dataset=test_dataset, batch_size = bs, shuffle = False)
+
             start_time_wasted0 = time.time()
             # a full pass over the training data:
             train_err = 0
             train_acc = 0
             train_batches = 0
-            for batch in iterate_minibatches(X_train, y_train, 500, shuffle=False):
+
+            for batch in train_loader:
                 inputs, targets = batch
                 err, acc = val_fn(network, inputs, targets)
                 train_err += err
@@ -341,24 +486,27 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
             val_err = 0
             val_acc = 0
             val_batches = 0
-            for batch in iterate_minibatches(X_val, y_val, 500, shuffle=False):
+            for batch in validation_loader:
                 inputs, targets = batch
                 err, acc = val_fn(network, inputs, targets)
                 val_err += err
                 val_acc += acc
                 val_batches += 1
+
             cur_valid_error = 100 - val_acc / val_batches * 100
+
             if (cur_valid_error < best_validation_error):
                 best_validation_error = cur_valid_error
                 test_err = 0
                 test_acc = 0
                 test_batches = 0
-                for batch in iterate_minibatches(X_test, y_test, 500, shuffle=False):
+                for batch in test_loader:
                     inputs, targets = batch
                     err, acc = val_fn(network, inputs, targets)
                     test_err += err
                     test_acc += acc
                     test_batches += 1
+
                 best_predicted_test_error = 100 - test_acc / test_batches * 100
 
             start_time_wasted1 = time.time()
@@ -388,7 +536,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
     test_err = 0
     test_acc = 0
     test_batches = 0
-    for batch in iterate_minibatches(X_test, y_test, 500, shuffle=False):
+    for batch in test_loader:
         inputs, targets = batch
         err, acc = val_fn(network, inputs, targets)
         test_err += err
@@ -413,10 +561,6 @@ def main():
     alg_vals = [1, 2]
     pp_scenarios = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-    run_vals = [1]
-    alg_vals = [1]
-    pp_scenarios = [1]
-
     bs_vals = [64]
     for irun in run_vals:
         for bs in bs_vals:
@@ -439,32 +583,6 @@ def main():
 
                 for alg in alg_vals:
                     test('cnn', num_epochs, bs_begin, bs_end, fac_begin, fac_end, pp1, pp2, alg, adapt_type, irun)
-
-def data_loading(bs = 64, shuffle_train = True, shuffle_test = False):
-    # Define transformations for the training set, which includes normalization
-    transform = transforms.Compose([
-        transforms.ToTensor()
-    ])
-
-    # Load the full training set
-    full_train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-
-    # Define the size of the validation set
-    validation_size = 10000
-    train_size = len(full_train_dataset) - validation_size
-
-    # Split the dataset into training and validation sets
-    train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size])
-
-    # Create DataLoaders for each set
-    train_loader = DataLoader(dataset=train_dataset, batch_size = bs, shuffle = shuffle_train)
-    validation_loader = DataLoader(dataset=validation_dataset, batch_size = bs, shuffle = shuffle_test)
-
-    # Load the test set
-    test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
-    test_loader = DataLoader(dataset=test_dataset, batch_size = bs, shuffle = shuffle_test)
-
-    return train_loader, validation_loader, test_loader
 
 if __name__ == '__main__':
     main()
