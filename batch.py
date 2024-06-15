@@ -162,10 +162,10 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
         targets = torch.from_numpy(targets)
         model.eval()
         output = model(input)
-        test_loss = (-output.log() * F.one_hot(targets, num_classes = 10)).sum(dim=1).mean()
+        test_loss = (-(output + 1e-5).log() * F.one_hot(targets, num_classes = 10)).sum(dim=1).mean()
 
         # As a bonus, also create an expression for the classification accuracy:
-        test_acc = torch.mean(torch.eq(torch.argmax(output, dim=1), targets), dtype = torch.float)
+        test_acc = torch.mean(torch.eq(torch.argmax((output + 1e-5), dim=1), targets), dtype = torch.float)
         
         return test_loss, test_acc
     
@@ -179,7 +179,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
     l = 0
     for l in range(0,ntraining):
         bfs[l][0] = 1e+10
-        bfs[l][1] = l
+        bfs[l][1] = int(l)
 
     prob = [None]*ntraining     # to store probabilies of selection, prob[i] for i-th ranked datapoint
     sumprob = [None]*ntraining  # to store sum of probabilies from 0 to i-th ranked point
@@ -214,14 +214,13 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
             bs = bs_begin * math.pow(mult_bs, epoch)
         bs = int(math.floor(bs))
 
-        fac = 1
         if (fac == 1):
             for batch in iterate_minibatches(X_train, y_train, bs, shuffle=True):
                 inputs, targets = batch
                 optimizer.zero_grad()
                 network.train()
                 output = network(inputs)
-                loss = (-output.log() * F.one_hot(torch.from_numpy(targets), num_classes = 10)).sum(dim=1).mean()
+                loss = (-(output + 1e-5).log() * F.one_hot(torch.from_numpy(targets), num_classes = 10)).sum(dim=1).mean()
                 loss.backward()
                 optimizer.step()
         else:
@@ -263,16 +262,16 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
 
                 idxs = []
                 for idx in indexes:
-                    idxs.append(bfs[idx][1])
+                    idxs.append(int(bfs[idx][1]))
                 batch = X_train[idxs], y_train[idxs]
                 inputs, targets = batch
                 optimizer.zero_grad()
                 network.train()
                 output = network(inputs)
-                losses = (-output.log() * F.one_hot(torch.from_numpy(targets), num_classes = 10)).sum(dim=1)
-                losses.backward()
-                optimizer.step()
+                losses = (-(output + 1e-5).log() * F.one_hot(torch.from_numpy(targets), num_classes = 10)).sum(dim=1)
                 meanloss = losses.mean()
+                meanloss.backward()
+                optimizer.step()
                 i = 0
                 for idx in indexes:
                     bfs[idx][0] = losses[i]
@@ -308,7 +307,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
                             inputs, targets = batch
                             network.train()
                             output = network(inputs)
-                            losses = (-output.log() * F.one_hot(torch.from_numpy(targets), num_classes = 10)).sum(dim=1)
+                            losses = (-(output + 1e-5).log() * F.one_hot(torch.from_numpy(targets), num_classes = 10)).sum(dim=1)
                             i = 0
                             for idx in indexes:
                                 bfs[idx][0] = losses[i]
