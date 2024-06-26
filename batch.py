@@ -141,6 +141,7 @@ def iterate_minibatches(inputs, targets, batchsize, shuffle=False):
 
 def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_end=100, pp1 = 0, pp2 = 0, alg=1, adapt_type = 0, irun = 1):
     # Load the dataset
+    print(bs_end, pp1, pp2, fac_begin, fac_end)
     print("Loading data...")
     X_train, y_train, X_val, y_val, X_test, y_test = load_dataset()
 
@@ -302,7 +303,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
 
                             idxs = []
                             for idx in indexes:
-                                idxs.append(bfs[idx][1])
+                                idxs.append(int(bfs[idx][1]))
                             batch = X_train[idxs], y_train[idxs]
                             inputs, targets = batch
                             network.train()
