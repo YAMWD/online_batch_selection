@@ -232,10 +232,7 @@ class RandomSampler(Sampler):
 
             idxs = []
             for idx in self.indexes:
-                try:
-                    idxs.append(int(self.bfs[idx][1]))
-                except:
-                    import pdb; pdb.set_trace()
+                idxs.append(int(self.bfs[idx][1]))
             
             yield idxs
 
@@ -443,7 +440,6 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
 
             train_dataset, validation_dataset, test_dataset, train_loader, validation_loader, test_loader = sorted_data_loading(network, bs, 500, sorting_evaluations_ago, sorting_evaluations_period, bfs, prob, sumprob, epoch)
             for batch in train_loader:
-                import pdb; pdb.set_trace()
                 inputs, targets = batch
                 optimizer.zero_grad()
                 network.train()
@@ -494,10 +490,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
                             
                             # inputs = torch.unsqueeze(inputs, 1).to(torch.float)
                             network.eval()
-                            try:
-                                output = network(inputs)
-                            except:
-                                import pdb; pdb.set_trace()
+                            output = network(inputs)
                             losses = CCE_losses_fn(output, targets)
                             i = 0
                             for idx in indexes:
@@ -604,8 +597,6 @@ def main():
     run_vals = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     alg_vals = [1, 2]
     pp_scenarios = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-
-    pp_scenarios = [7]
 
     bs_vals = [64]
     for irun in run_vals:
