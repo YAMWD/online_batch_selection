@@ -17,7 +17,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torchvision import datasets, transforms
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader, random_split
 from torch.utils.data.sampler import Sampler
 
 #from pylearn2.datasets.zca_dataset import ZCA_Dataset
@@ -261,12 +261,31 @@ class BatchSampler(Sampler):
     def __len__(self):
         return len(self.sampler) // self.batch_size
     
+# Custom dataset class
+class CustomDataset(Dataset):
+    def __init__(self, data, labels, transform=None):
+        self.data = data
+        self.labels = labels
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        sample = self.data[idx]
+        label = self.labels[idx]
+
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample, label
+    
 def sorted_data_loading(model, bs, bs_test, sorting_evaluations_ago, sorting_evaluations_period, bfs, prob, sumprob, epoch, shuffle_train = True, shuffle_test = False, device = 'cpu'):
     # Define transformations for the training set, which includes normalization
     transform = transforms.Compose([
         transforms.ToTensor()
     ])
-
+    '''
     # Load the full training set
     full_train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
 
@@ -280,6 +299,24 @@ def sorted_data_loading(model, bs, bs_test, sorting_evaluations_ago, sorting_eva
     indices = train_dataset.indices
     train_data = train_dataset.dataset.data[indices].to(device)
     train_target = train_dataset.dataset.train_labels[indices].to(device)
+    '''
+    X_train, y_train, X_val, y_val, X_test, y_test = load_dataset()
+
+    X_train = torch.from_numpy(X_train)
+    X_val = torch.from_numpy(X_val)
+    X_test = torch.from_numpy(X_test)
+
+    y_train = torch.from_numpy(y_train)
+    y_val = torch.from_numpy(y_val)
+    y_test = torch.from_numpy(y_test)
+
+    train_dataset = CustomDataset(X_train, y_train)
+    train_data = X_train
+    train_target = y_train
+
+    validation_dataset = CustomDataset(X_val, y_val)
+
+    test_dataset = CustomDataset(X_test, y_test)
 
     sampler = RandomSampler(model, train_dataset, train_data, train_target, bs, sorting_evaluations_ago, sorting_evaluations_period, bfs, prob, sumprob, epoch)
 
@@ -291,7 +328,7 @@ def sorted_data_loading(model, bs, bs_test, sorting_evaluations_ago, sorting_eva
     validation_loader = DataLoader(dataset=validation_dataset, batch_size = bs_test, shuffle = shuffle_test)
 
     # Load the test set
-    test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
+    # test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
     test_loader = DataLoader(dataset=test_dataset, batch_size = bs_test, shuffle = shuffle_test)
 
     return train_dataset, validation_dataset, test_dataset, train_loader, validation_loader, test_loader
@@ -405,8 +442,8 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
                 else:           sumprob[i] = sumprob[i-1] + prob[i]
 
             train_dataset, validation_dataset, test_dataset, train_loader, validation_loader, test_loader = sorted_data_loading(network, bs, 500, sorting_evaluations_ago, sorting_evaluations_period, bfs, prob, sumprob, epoch)
-
             for batch in train_loader:
+                import pdb; pdb.set_trace()
                 inputs, targets = batch
                 optimizer.zero_grad()
                 network.train()
@@ -446,14 +483,21 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
 
                             idxs = []
                             for idx in indexes:
-                                idxs.append(bfs[idx][1])
+                                idxs.append(int(bfs[idx][1]))
 
+                            '''
                             inputs = train_loader.dataset.dataset.train_data[idxs]
                             targets = train_loader.dataset.dataset.train_labels[idxs]
-
-                            inputs = torch.unsqueeze(inputs, 1).to(torch.float)
+                            '''
+                            inputs = train_loader.dataset.data[idxs]
+                            targets = train_loader.dataset.labels[idxs]
+                            
+                            # inputs = torch.unsqueeze(inputs, 1).to(torch.float)
                             network.eval()
-                            output = network(inputs)
+                            try:
+                                output = network(inputs)
+                            except:
+                                import pdb; pdb.set_trace()
                             losses = CCE_losses_fn(output, targets)
                             i = 0
                             for idx in indexes:
@@ -560,6 +604,8 @@ def main():
     run_vals = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     alg_vals = [1, 2]
     pp_scenarios = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+    pp_scenarios = [7]
 
     bs_vals = [64]
     for irun in run_vals:
