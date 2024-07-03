@@ -146,7 +146,8 @@ def iterate_minibatches(inputs, targets, batchsize, shuffle=False):
 def regular_data_loading(bs = 64, shuffle_train = True, shuffle_test = False, device = 'cpu'):
     # Define transformations for the training set, which includes normalization
     transform = transforms.Compose([
-        transforms.ToTensor()
+        transforms.ToTensor(),
+    lambda x: x * 255. / 256.
     ])
 
     # Load the full training set
@@ -264,7 +265,8 @@ class BatchSampler(Sampler):
 def sorted_data_loading(model, bs, bs_test, sorting_evaluations_ago, sorting_evaluations_period, bfs, prob, sumprob, epoch, shuffle_train = True, shuffle_test = False, device = 'cpu'):
     # Define transformations for the training set, which includes normalization
     transform = transforms.Compose([
-        transforms.ToTensor()
+        transforms.ToTensor(),
+        lambda x: x * 255. / 256.,
     ])
 
     # Load the full training set
@@ -557,7 +559,8 @@ def main():
     #fac_end = 1     # selection pressure at at 'num_epochs'
     adapt_type = 1  # 0 - linear, 1 - exponential change of batch size from bs_begin to bs_end as a function of epoch index
 
-    run_vals = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    # run_vals = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    run_vals = [1]
     alg_vals = [1, 2]
     pp_scenarios = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
