@@ -143,32 +143,6 @@ def iterate_minibatches(inputs, targets, batchsize, shuffle=False):
             excerpt = slice(start_idx, start_idx + batchsize)
         yield inputs[excerpt], targets[excerpt]
 
-def regular_data_loading(bs = 64, shuffle_train = True, shuffle_test = False, device = 'cpu'):
-    # Define transformations for the training set, which includes normalization
-    transform = transforms.Compose([
-        transforms.ToTensor()
-    ])
-
-    # Load the full training set
-    full_train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-
-    # Define the size of the validation set
-    validation_size = 10000
-    train_size = len(full_train_dataset) - validation_size
-
-    # Split the dataset into training and validation sets
-    train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size])
-
-    # Create DataLoaders for each set
-    train_loader = DataLoader(dataset = train_dataset, batch_size = bs, shuffle = shuffle_train)
-    validation_loader = DataLoader(dataset=validation_dataset, batch_size = bs, shuffle = shuffle_test)
-
-    # Load the test set
-    test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
-    test_loader = DataLoader(dataset=test_dataset, batch_size = bs, shuffle = shuffle_test)
-
-    return train_dataset, validation_dataset, test_dataset, train_loader, validation_loader, test_loader
-
 class RandomSampler(Sampler):
     r"""Samples elements randomly, without replacement.
     Arguments:
@@ -276,7 +250,50 @@ class CustomDataset(Dataset):
             sample = self.transform(sample)
 
         return sample, label
-    
+
+def regular_data_loading(bs = 64, shuffle_train = True, shuffle_test = False, device = 'cpu'):
+    # Define transformations for the training set, which includes normalization
+    transform = transforms.Compose([
+        transforms.ToTensor()
+    ])
+    '''
+    # Load the full training set
+    full_train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
+
+    # Define the size of the validation set
+    validation_size = 10000
+    train_size = len(full_train_dataset) - validation_size
+
+    # Split the dataset into training and validation sets
+    train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size])
+    '''
+    X_train, y_train, X_val, y_val, X_test, y_test = load_dataset()
+
+    X_train = torch.from_numpy(X_train)
+    X_val = torch.from_numpy(X_val)
+    X_test = torch.from_numpy(X_test)
+
+    y_train = torch.from_numpy(y_train)
+    y_val = torch.from_numpy(y_val)
+    y_test = torch.from_numpy(y_test)
+
+    train_dataset = CustomDataset(X_train, y_train)
+
+    validation_dataset = CustomDataset(X_val, y_val)
+
+    test_dataset = CustomDataset(X_test, y_test)
+
+    # Create DataLoaders for each set
+    train_loader = DataLoader(dataset = train_dataset, batch_size = bs, shuffle = shuffle_train)
+
+    validation_loader = DataLoader(dataset=validation_dataset, batch_size = bs, shuffle = shuffle_test)
+
+    # Load the test set
+    test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
+    test_loader = DataLoader(dataset=test_dataset, batch_size = bs, shuffle = shuffle_test)
+
+    return train_dataset, validation_dataset, test_dataset, train_loader, validation_loader, test_loader
+
 def sorted_data_loading(model, bs, bs_test, sorting_evaluations_ago, sorting_evaluations_period, bfs, prob, sumprob, epoch, shuffle_train = True, shuffle_test = False, device = 'cpu'):
     # Define transformations for the training set, which includes normalization
     transform = transforms.Compose([
@@ -439,6 +456,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
                 else:           sumprob[i] = sumprob[i-1] + prob[i]
 
             train_dataset, validation_dataset, test_dataset, train_loader, validation_loader, test_loader = sorted_data_loading(network, bs, 500, sorting_evaluations_ago, sorting_evaluations_period, bfs, prob, sumprob, epoch)
+            
             for batch in train_loader:
                 inputs, targets = batch
                 optimizer.zero_grad()
@@ -502,9 +520,9 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
 
             train_loader = DataLoader(dataset = train_dataset, batch_size = bs, shuffle = False)
 
-            validation_loader = DataLoader(dataset=validation_dataset, batch_size = bs, shuffle = False)
+            validation_loader = DataLoader(dataset = validation_dataset, batch_size = bs, shuffle = False)
 
-            test_loader = DataLoader(dataset=test_dataset, batch_size = bs, shuffle = False)
+            test_loader = DataLoader(dataset = test_dataset, batch_size = bs, shuffle = False)
 
             start_time_wasted0 = time.time()
             # a full pass over the training data:
@@ -594,7 +612,8 @@ def main():
     #fac_end = 1     # selection pressure at at 'num_epochs'
     adapt_type = 1  # 0 - linear, 1 - exponential change of batch size from bs_begin to bs_end as a function of epoch index
 
-    run_vals = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    # run_vals = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    run_vals = [1]
     alg_vals = [1, 2]
     pp_scenarios = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
