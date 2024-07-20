@@ -277,7 +277,8 @@ def sorted_data_loading(model, bs, bs_test, sorting_evaluations_ago, sorting_eva
     train_size = len(full_train_dataset) - validation_size
 
     # Split the dataset into training and validation sets
-    train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size])
+    #train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size])
+    train_dataset, validation_dataset = torch.utils.data.Subset(full_train_dataset, range(train_size)), torch.utils.data.Subset(full_train_dataset, range(train_size, train_size + validation_size))
 
     indices = train_dataset.indices
     train_data = train_dataset.dataset.data[indices].to(device)
@@ -562,7 +563,8 @@ def main():
     # run_vals = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     run_vals = [1]
     alg_vals = [1, 2]
-    pp_scenarios = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    # pp_scenarios = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    pp_scenarios = [7]
 
     bs_vals = [64]
     for irun in run_vals:
