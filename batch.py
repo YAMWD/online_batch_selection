@@ -22,6 +22,7 @@ from torch.utils.data.sampler import Sampler
 
 seed = int(time.time())
 torch.manual_seed(seed)
+rng = torch.Generator().manual_seed(seed)
 
 #from pylearn2.datasets.zca_dataset import ZCA_Dataset
 #from pylearn2.utils import serial
@@ -146,36 +147,6 @@ def iterate_minibatches(inputs, targets, batchsize, shuffle=False):
             excerpt = slice(start_idx, start_idx + batchsize)
         yield inputs[excerpt], targets[excerpt]
 
-def regular_data_loading(bs = 64, shuffle_train = True, shuffle_test = False, device = 'cpu'):
-    # Define transformations for the training set, which includes normalization
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        # lambda x: x * 255. / 256.
-    ])
-
-    # Load the full training set
-    full_train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-
-    # Define the size of the validation set
-    validation_size = 10000
-    train_size = len(full_train_dataset) - validation_size
-
-    # Split the dataset into training and validation sets
-    # train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size])
-
-    # deterministic split
-    train_dataset, validation_dataset = torch.utils.data.Subset(full_train_dataset, range(train_size)), torch.utils.data.Subset(full_train_dataset, range(train_size, train_size + validation_size))
-
-    # Create DataLoaders for each set
-    train_loader = DataLoader(dataset = train_dataset, batch_size = bs, shuffle = shuffle_train)
-    validation_loader = DataLoader(dataset=validation_dataset, batch_size = bs, shuffle = shuffle_test)
-
-    # Load the test set
-    test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
-    test_loader = DataLoader(dataset=test_dataset, batch_size = bs, shuffle = shuffle_test)
-
-    return train_dataset, validation_dataset, test_dataset, train_loader, validation_loader, test_loader
-
 class RandomSampler(Sampler):
     r"""Samples elements randomly, without replacement.
     Arguments:
@@ -267,7 +238,7 @@ class BatchSampler(Sampler):
 
     def __len__(self):
         return len(self.sampler) // self.batch_size
-    
+
 def sorted_data_loading(model, bs, bs_test, sorting_evaluations_ago, sorting_evaluations_period, bfs, prob, sumprob, epoch, shuffle_train = True, shuffle_test = False, device = 'cpu'):
     # Define transformations for the training set, which includes normalization
     transform = transforms.Compose([
@@ -283,10 +254,10 @@ def sorted_data_loading(model, bs, bs_test, sorting_evaluations_ago, sorting_eva
     train_size = len(full_train_dataset) - validation_size
 
     # Split the dataset into training and validation sets
-    #train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size])
+    train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size], generator = rng)
 
     # deterministic split
-    train_dataset, validation_dataset = torch.utils.data.Subset(full_train_dataset, range(train_size)), torch.utils.data.Subset(full_train_dataset, range(train_size, train_size + validation_size))
+    # train_dataset, validation_dataset = torch.utils.data.Subset(full_train_dataset, range(train_size)), torch.utils.data.Subset(full_train_dataset, range(train_size, train_size + validation_size))
 
     indices = train_dataset.indices
     train_data = train_dataset.dataset.data[indices].to(device)
@@ -304,6 +275,36 @@ def sorted_data_loading(model, bs, bs_test, sorting_evaluations_ago, sorting_eva
     # Load the test set
     test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
     test_loader = DataLoader(dataset=test_dataset, batch_size = bs_test, shuffle = shuffle_test)
+
+    return train_dataset, validation_dataset, test_dataset, train_loader, validation_loader, test_loader
+
+def regular_data_loading(bs = 64, shuffle_train = True, shuffle_test = False, device = 'cpu'):
+    # Define transformations for the training set, which includes normalization
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        # lambda x: x * 255. / 256.
+    ])
+
+    # Load the full training set
+    full_train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
+
+    # Define the size of the validation set
+    validation_size = 10000
+    train_size = len(full_train_dataset) - validation_size
+
+    # Split the dataset into training and validation sets
+    train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size], generator = rng)
+
+    # deterministic split
+    # train_dataset, validation_dataset = torch.utils.data.Subset(full_train_dataset, range(train_size)), torch.utils.data.Subset(full_train_dataset, range(train_size, train_size + validation_size))
+
+    # Create DataLoaders for each set
+    train_loader = DataLoader(dataset = train_dataset, batch_size = bs, shuffle = shuffle_train)
+    validation_loader = DataLoader(dataset=validation_dataset, batch_size = bs, shuffle = shuffle_test)
+
+    # Load the test set
+    test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
+    test_loader = DataLoader(dataset=test_dataset, batch_size = bs, shuffle = shuffle_test)
 
     return train_dataset, validation_dataset, test_dataset, train_loader, validation_loader, test_loader
 
@@ -582,7 +583,7 @@ def main():
     run_vals = [1]
     alg_vals = [1, 2]
     # pp_scenarios = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    pp_scenarios = [1]
+    pp_scenarios = [7]
 
     bs_vals = [64]
     for irun in run_vals:
