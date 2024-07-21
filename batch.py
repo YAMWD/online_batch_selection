@@ -20,7 +20,8 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
 from torch.utils.data.sampler import Sampler
 
-torch.manual_seed(42)
+seed = int(time.time())
+torch.manual_seed(seed)
 
 #from pylearn2.datasets.zca_dataset import ZCA_Dataset
 #from pylearn2.utils import serial
@@ -160,7 +161,10 @@ def regular_data_loading(bs = 64, shuffle_train = True, shuffle_test = False, de
     train_size = len(full_train_dataset) - validation_size
 
     # Split the dataset into training and validation sets
-    train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size])
+    # train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size])
+
+    # deterministic split
+    train_dataset, validation_dataset = torch.utils.data.Subset(full_train_dataset, range(train_size)), torch.utils.data.Subset(full_train_dataset, range(train_size, train_size + validation_size))
 
     # Create DataLoaders for each set
     train_loader = DataLoader(dataset = train_dataset, batch_size = bs, shuffle = shuffle_train)
@@ -280,6 +284,8 @@ def sorted_data_loading(model, bs, bs_test, sorting_evaluations_ago, sorting_eva
 
     # Split the dataset into training and validation sets
     #train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size])
+
+    # deterministic split
     train_dataset, validation_dataset = torch.utils.data.Subset(full_train_dataset, range(train_size)), torch.utils.data.Subset(full_train_dataset, range(train_size, train_size + validation_size))
 
     indices = train_dataset.indices
@@ -349,7 +355,17 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
     # Finally, launch the training loop.
     print("Starting training...")
 
-    filename = "pytorch_data/" + algname + "_{}_{}_{}_{}_{}_{}".format(irun, bs_end, pp1, pp2, fac_begin, fac_end) + ".txt"
+    foldername = "pytorch_data/seed_{}/".format(seed)
+    filename = foldername + algname + "_{}_{}_{}_{}_{}_{}".format(irun, bs_end, pp1, pp2, fac_begin, fac_end) + ".txt"
+
+    # Create the directory
+    try:
+        os.mkdir(foldername)
+        print(f"Directory '{foldername}' created successfully")
+    except FileExistsError:
+        print(f"Directory '{foldername}' already exists")
+    except OSError as error:
+        print(f"Error creating directory '{foldername}': {error}")
 
     mult_bs = math.exp(math.log(bs_end/bs_begin)/num_epochs)
     mult_fac = math.exp(math.log(fac_end/fac_begin)/num_epochs)
@@ -566,7 +582,7 @@ def main():
     run_vals = [1]
     alg_vals = [1, 2]
     # pp_scenarios = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    pp_scenarios = [7]
+    pp_scenarios = [1]
 
     bs_vals = [64]
     for irun in run_vals:
