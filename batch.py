@@ -20,6 +20,8 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
 from torch.utils.data.sampler import Sampler
 
+torch.manual_seed(42)
+
 #from pylearn2.datasets.zca_dataset import ZCA_Dataset
 #from pylearn2.utils import serial
 
@@ -147,7 +149,7 @@ def regular_data_loading(bs = 64, shuffle_train = True, shuffle_test = False, de
     # Define transformations for the training set, which includes normalization
     transform = transforms.Compose([
         transforms.ToTensor(),
-    lambda x: x * 255. / 256.
+        # lambda x: x * 255. / 256.
     ])
 
     # Load the full training set
@@ -266,7 +268,7 @@ def sorted_data_loading(model, bs, bs_test, sorting_evaluations_ago, sorting_eva
     # Define transformations for the training set, which includes normalization
     transform = transforms.Compose([
         transforms.ToTensor(),
-        lambda x: x * 255. / 256.,
+        # lambda x: x * 255. / 256.,
     ])
 
     # Load the full training set
