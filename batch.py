@@ -485,11 +485,11 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
 
         if (1): # otherwise report time only
 
-            train_loader = DataLoader(dataset = train_dataset, batch_size = bs, shuffle = False)
+            train_loader_1 = DataLoader(dataset = train_dataset, batch_size = bs, shuffle = False)
 
-            validation_loader = DataLoader(dataset=validation_dataset, batch_size = bs, shuffle = False)
+            validation_loader_1 = DataLoader(dataset = validation_dataset, batch_size = bs, shuffle = False)
 
-            test_loader = DataLoader(dataset=test_dataset, batch_size = bs, shuffle = False)
+            test_loader_1 = DataLoader(dataset = test_dataset, batch_size = bs, shuffle = False)
 
             start_time_wasted0 = time.time()
             # a full pass over the training data:
@@ -497,7 +497,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
             train_acc = 0
             train_batches = 0
 
-            for batch in train_loader:
+            for batch in train_loader_1:
                 inputs, targets = batch
                 err, acc = val_fn(network, inputs, targets)
                 train_err += err
@@ -508,7 +508,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
             val_err = 0
             val_acc = 0
             val_batches = 0
-            for batch in validation_loader:
+            for batch in validation_loader_1:
                 inputs, targets = batch
                 err, acc = val_fn(network, inputs, targets)
                 val_err += err
@@ -522,7 +522,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
                 test_err = 0
                 test_acc = 0
                 test_batches = 0
-                for batch in test_loader:
+                for batch in test_loader_1:
                     inputs, targets = batch
                     err, acc = val_fn(network, inputs, targets)
                     test_err += err
@@ -558,12 +558,13 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
     test_err = 0
     test_acc = 0
     test_batches = 0
-    for batch in test_loader:
+    for batch in test_loader_1:
         inputs, targets = batch
         err, acc = val_fn(network, inputs, targets)
         test_err += err
         test_acc += acc
         test_batches += 1
+        
     print("Final results:")
     print("  test loss:\t\t\t{:.6f}".format(test_err / test_batches))
     print("  test accuracy:\t\t{:.2f} %".format(
