@@ -20,8 +20,10 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
 from torch.utils.data.sampler import Sampler
 
-seed = int(time.time())
+seed = 1721603134
 torch.manual_seed(seed)
+np.random.seed(seed)
+random.seed(seed)
 rng = torch.Generator().manual_seed(seed)
 
 #from pylearn2.datasets.zca_dataset import ZCA_Dataset
