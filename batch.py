@@ -212,10 +212,7 @@ class RandomSampler(Sampler):
 
             idxs = []
             for idx in self.indexes:
-                try:
-                    idxs.append(int(self.bfs[idx][1]))
-                except:
-                    import pdb; pdb.set_trace()
+                idxs.append(int(self.bfs[idx][1]))
             
             yield idxs
 
@@ -256,10 +253,10 @@ def sorted_data_loading(model, bs, bs_test, sorting_evaluations_ago, sorting_eva
     train_size = len(full_train_dataset) - validation_size
 
     # Split the dataset into training and validation sets
-    train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size], generator = rng)
+    # train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size], generator = rng)
 
     # deterministic split
-    # train_dataset, validation_dataset = torch.utils.data.Subset(full_train_dataset, range(train_size)), torch.utils.data.Subset(full_train_dataset, range(train_size, train_size + validation_size))
+    train_dataset, validation_dataset = torch.utils.data.Subset(full_train_dataset, range(train_size)), torch.utils.data.Subset(full_train_dataset, range(train_size, train_size + validation_size))
 
     indices = train_dataset.indices
     train_data = train_dataset.dataset.data[indices].to(device)
@@ -295,10 +292,10 @@ def regular_data_loading(bs = 64, shuffle_train = True, shuffle_test = False, de
     train_size = len(full_train_dataset) - validation_size
 
     # Split the dataset into training and validation sets
-    train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size], generator = rng)
+    # train_dataset, validation_dataset = random_split(full_train_dataset, [train_size, validation_size], generator = rng)
 
     # deterministic split
-    # train_dataset, validation_dataset = torch.utils.data.Subset(full_train_dataset, range(train_size)), torch.utils.data.Subset(full_train_dataset, range(train_size, train_size + validation_size))
+    train_dataset, validation_dataset = torch.utils.data.Subset(full_train_dataset, range(train_size)), torch.utils.data.Subset(full_train_dataset, range(train_size, train_size + validation_size))
 
     # Create DataLoaders for each set
     train_loader = DataLoader(dataset = train_dataset, batch_size = bs, shuffle = shuffle_train)
@@ -436,7 +433,6 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
                 network.train()
                 output = network(inputs)
                 losses = CCE_losses_fn(output, targets)
-                import pdb; pdb.set_trace()
                 meanloss = losses.mean()
                 meanloss.backward()
                 optimizer.step()
