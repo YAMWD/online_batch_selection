@@ -245,7 +245,7 @@ def sorted_data_loading(model, bs, bs_test, sorting_evaluations_ago, sorting_eva
     # Define transformations for the training set, which includes normalization
     transform = transforms.Compose([
         transforms.ToTensor(),
-        # lambda x: x * 255. / 256.,
+        lambda x: x * 255. / 256.,
     ])
 
     # Load the full training set
@@ -284,7 +284,7 @@ def regular_data_loading(bs = 64, shuffle_train = True, shuffle_test = False, de
     # Define transformations for the training set, which includes normalization
     transform = transforms.Compose([
         transforms.ToTensor(),
-        # lambda x: x * 255. / 256.
+        lambda x: x * 255. / 256.
     ])
 
     # Load the full training set
