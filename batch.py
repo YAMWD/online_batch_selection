@@ -584,7 +584,7 @@ def main():
     run_vals = [1]
     alg_vals = [1, 2]
     # pp_scenarios = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    pp_scenarios = [1]
+    pp_scenarios = [7]
 
     bs_vals = [64]
     for irun in run_vals:
