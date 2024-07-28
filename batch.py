@@ -395,6 +395,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
 
     # We iterate over epochs:
     for epoch in range(num_epochs):
+        import pdb; pdb.set_trace()
         start_time = time.time()
         fac = fac_begin * math.pow(mult_fac, epoch)
         if (adapt_type == 0):   # linear
@@ -583,7 +584,7 @@ def main():
     run_vals = [1]
     alg_vals = [1, 2]
     # pp_scenarios = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    pp_scenarios = [7]
+    pp_scenarios = [1]
 
     bs_vals = [64]
     for irun in run_vals:
