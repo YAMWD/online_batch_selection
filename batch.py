@@ -395,7 +395,6 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
 
     # We iterate over epochs:
     for epoch in range(num_epochs):
-        import pdb; pdb.set_trace()
         start_time = time.time()
         fac = fac_begin * math.pow(mult_fac, epoch)
         if (adapt_type == 0):   # linear
@@ -468,9 +467,9 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
 
                             idxs = []
                             for idx in indexes:
-                                idxs.append(bfs[idx][1])
+                                idxs.append(int(bfs[idx][1]))
 
-                            inputs = train_loader.dataset.dataset.train_data[idxs]
+                            inputs = train_loader.dataset.dataset.train_data[idxs] / 256.
                             targets = train_loader.dataset.dataset.train_labels[idxs]
 
                             inputs = torch.unsqueeze(inputs, 1).to(torch.float)
