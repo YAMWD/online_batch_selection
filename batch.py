@@ -13,6 +13,7 @@ import numpy as np
 import pickle
 import matplotlib.pyplot as plt
 import torch
+import copy
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
@@ -155,7 +156,7 @@ class RandomSampler(Sampler):
         data_source (Dataset): dataset to sample from
     """
 
-    def __init__(self, model, data_source, train_data, train_target, batch_size, sorting_evaluations_ago, sorting_evaluations_period, bfs, prob, sumprob, epoch):
+    def __init__(self, model, data_source, train_data, train_target, batch_size, fac, pp1, pp2, epoch):
         self.model = model
         self.data_source = data_source
         self.batch_size = batch_size
@@ -164,13 +165,25 @@ class RandomSampler(Sampler):
         # self.data = self.data.type(torch.cuda.FloatTensor)
         self.target = train_target
 
-        self.sorting_evaluations_period = sorting_evaluations_period   # increase it if sorting is too expensive
-        self.sorting_evaluations_ago = sorting_evaluations_ago
+        self.sorting_evaluations_period = 100   # increase it if sorting is too expensive
+        self.sorting_evaluations_ago = 2 * self.sorting_evaluations_period
 
-        self.bfs = bfs
-        # make bfs a update method
-        self.prob = prob
-        self.sumprob = sumprob
+        self.lastii = 0
+        self.curii = 0
+        self.fac = fac
+        self.pp1 = pp1
+        self.pp2 = pp2
+
+        self.ntraining = len(train_data)
+
+        self.bfs = np.ndarray((self.ntraining, 2))
+        for idx in range(0, self.ntraining):
+            self.bfs[idx][0] = 1e+10
+            self.bfs[idx][1] = int(idx)
+
+        self.prob = [None] * self.ntraining     # to store probabilies of selection, prob[i] for i-th ranked datapoint
+        self.sumprob = [None] * self.ntraining  # to store sum of probabilies from 0 to i-th ranked point
+
         self.epoch = epoch
 
         self.stop = 0
@@ -178,11 +191,75 @@ class RandomSampler(Sampler):
 
         self.indexes = []
 
+    def init_bfs(self, bfs):
+        self.bfs = copy.deepcopy(bfs)
+
+    def init_prob(self):
+        mult = math.exp(math.log(self.fac) / self.ntraining)
+
+        for i in range(0, self.ntraining):
+            if (i == 0):    self.prob[i] = 1.0
+            else:           self.prob[i] = self.prob[i - 1] / mult
+
+        psum = sum(self.prob)
+
+        self.prob = [v / psum for v in self.prob]
+        for i in range(0, self.ntraining):
+            if (i == 0):    self.sumprob[i] = self.prob[i]
+            else:           self.sumprob[i] = self.sumprob[i-1] + self.prob[i]
+
     def get_scores(self):
         output, feat = self.model.forward(self.data)
         criterion = nn.CrossEntropyLoss(reduce=False)
         loss = criterion(output, self.target)
         return loss
+
+    def update(self, losses):
+        i = 0
+        indice = self.indexes
+        for idx in indice:
+            self.bfs[idx][0] = losses[i] # update loss for corresponding datapoint, rely on the computed index, so index cannot be wrapped into a sampler that is invisible to the training loop
+            i = i + 1
+
+        #if (1):
+        self.curii = self.curii + len(indice)
+
+        if (self.pp1 > 0):
+            if (self.curii - self.lastii > self.ntraining / self.pp1):
+                self.lastii = self.curii
+                stopp = 0
+                iii = 0
+                bs_here = 500
+                maxpt = int(self.ntraining * self.pp2)
+                while (stopp == 0):
+                    indexes = []
+                    stop1 = 0
+                    while (stop1 == 0):
+                        index = iii
+                        indexes.append(index)
+                        iii = iii + 1
+                        if (len(indexes) == bs_here) or (iii == maxpt):
+                            stop1 = 1
+
+                    if (iii == maxpt):
+                        stopp = 1
+
+                    idxs = []
+                    for idx in indexes:
+                        idxs.append(int(self.bfs[idx][1]))
+
+                    import pdb; pdb.set_trace()
+                    inputs = self.data[idxs] / 256.
+                    targets = self.target[idxs]
+
+                    inputs = torch.unsqueeze(inputs, 1).to(torch.float)
+                    self.model.eval()
+                    output = self.model(inputs)
+                    losses = CCE_losses_fn(output, targets)
+                    i = 0
+                    for idx in indexes:
+                        self.bfs[idx][0] = losses[i]
+                        i = i + 1
 
     def __iter__(self):
         while (self.stop == 0):
@@ -238,7 +315,7 @@ class BatchSampler(Sampler):
     def __len__(self):
         return len(self.sampler) // self.batch_size
 
-def sorted_data_loading(model, bs, bs_test, sorting_evaluations_ago, sorting_evaluations_period, bfs, prob, sumprob, epoch, shuffle_train = True, shuffle_test = False, device = 'cpu'):
+def sorted_data_loading(model, bs, bs_test, fac1, pp1, pp2, epoch, shuffle_train = True, shuffle_test = False, device = 'cpu'):
     # Define transformations for the training set, which includes normalization
     transform = transforms.Compose([
         transforms.ToTensor(),
@@ -262,7 +339,7 @@ def sorted_data_loading(model, bs, bs_test, sorting_evaluations_ago, sorting_eva
     train_data = train_dataset.dataset.data[indices].to(device)
     train_target = train_dataset.dataset.train_labels[indices].to(device)
 
-    sampler = RandomSampler(model, train_dataset, train_data, train_target, bs, sorting_evaluations_ago, sorting_evaluations_period, bfs, prob, sumprob, epoch)
+    sampler = RandomSampler(model, train_dataset, train_data, train_target, bs, fac1, pp1, pp2, epoch)
 
     batch_sampler = BatchSampler(sampler, bs, True)
 
@@ -369,29 +446,14 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
 
     mult_bs = math.exp(math.log(bs_end/bs_begin)/num_epochs)
     mult_fac = math.exp(math.log(fac_end/fac_begin)/num_epochs)
-
-    bfs = []                    # to store last known loss for each datapoint
-    ntraining = len(X_train)    # number of training datapoints
-    bfs = np.ndarray((ntraining, 2))
-    l = 0
-    for l in range(0, ntraining):
-        bfs[l][0] = 1e+10
-        bfs[l][1] = int(l)
-
-    prob = [None] * ntraining     # to store probabilies of selection, prob[i] for i-th ranked datapoint
-    sumprob = [None] * ntraining  # to store sum of probabilies from 0 to i-th ranked point
-
-    sorting_evaluations_period = 100   # increase it if sorting is too expensive
-    sorting_evaluations_ago = 2 * sorting_evaluations_period
-
-    lastii = 0
-    curii = 0
     
     start_time0 = time.time()
     wasted_time = 0         # time wasted on computing training and validation losses/errors
     best_validation_error = 1e+10
     best_predicted_test_error = 1e+10
     myfile=open(filename, 'w+')
+
+    local_bfs = None
 
     # We iterate over epochs:
     for epoch in range(num_epochs):
@@ -405,6 +467,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
 
         if (fac == 1):
             train_dataset, validation_dataset, test_dataset, train_loader, validation_loader, test_loader = regular_data_loading(bs = bs)
+
             for batch in train_loader:
                 inputs, targets = batch
                 optimizer.zero_grad()
@@ -414,19 +477,14 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
                 loss.backward()
                 optimizer.step()
         else:
-            mult = math.exp(math.log(fac) / ntraining)
+            train_dataset, validation_dataset, test_dataset, train_loader, validation_loader, test_loader = sorted_data_loading(network, bs, 500, fac, pp1, pp2, epoch)
 
-            for i in range(0, ntraining):
-                if (i == 0):    prob[i] = 1.0
-                else:           prob[i] = prob[i - 1] / mult
-            psum = sum(prob)
-            prob =[v / psum for v in prob]
-            for i in range(0, ntraining):
-                if (i == 0):    sumprob[i] = prob[i]
-                else:           sumprob[i] = sumprob[i-1] + prob[i]
+            train_loader.batch_sampler.sampler.init_prob()
 
-            train_dataset, validation_dataset, test_dataset, train_loader, validation_loader, test_loader = sorted_data_loading(network, bs, 500, sorting_evaluations_ago, sorting_evaluations_period, bfs, prob, sumprob, epoch)
+            if local_bfs is not None:
+                train_loader.batch_sampler.sampler.init_bfs(local_bfs)
 
+            import pdb; pdb.set_trace()
             for batch in train_loader:
                 inputs, targets = batch
                 optimizer.zero_grad()
@@ -436,52 +494,10 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
                 meanloss = losses.mean()
                 meanloss.backward()
                 optimizer.step()
-                i = 0
-                indice = train_loader.batch_sampler.sampler.indexes
-                for idx in indice:
-                    bfs[idx][0] = losses[i] # update loss for corresponding datapoint, rely on the computed index, so index cannot be wrapped into a sampler that is invisible to the training loop
-                    i = i + 1
+                train_loader.batch_sampler.sampler.update(losses)
 
-                #if (1):
-                curii = curii + len(indice)
-
-                if (pp1 > 0):
-                    if (curii - lastii > ntraining / pp1):
-                        lastii = curii
-                        stopp = 0
-                        iii = 0
-                        bs_here = 500
-                        maxpt = int(len(X_train) * pp2)
-                        while (stopp == 0):
-                            indexes = []
-                            stop1 = 0
-                            while (stop1 == 0):
-                                index = iii
-                                indexes.append(index)
-                                iii = iii + 1
-                                if (len(indexes) == bs_here) or (iii == maxpt):
-                                    stop1 = 1
-
-                            if (iii == maxpt):
-                                stopp = 1
-
-                            idxs = []
-                            for idx in indexes:
-                                idxs.append(int(bfs[idx][1]))
-
-                            inputs = train_loader.dataset.dataset.train_data[idxs] / 256.
-                            targets = train_loader.dataset.dataset.train_labels[idxs]
-
-                            inputs = torch.unsqueeze(inputs, 1).to(torch.float)
-                            network.eval()
-                            output = network(inputs)
-                            losses = CCE_losses_fn(output, targets)
-                            i = 0
-                            for idx in indexes:
-                                bfs[idx][0] = losses[i]
-                                i = i + 1
-
-
+            local_bfs = copy.deepcopy(train_loader.batch_sampler.sampler.bfs)
+            
         if (1): # otherwise report time only
 
             train_loader = DataLoader(dataset = train_dataset, batch_size = bs, shuffle = False)
@@ -568,7 +584,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
     print("  test loss:\t\t\t{:.6f}".format(test_err / test_batches))
     print("  test accuracy:\t\t{:.2f} %".format(
         100 - test_acc / test_batches * 100))
-    
+
 def main():
     num_epochs = 50  # maximum number of epochs
     alg = 1         # 1 - AdaDelta, 2 - Adam, see function test for more details
