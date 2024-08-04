@@ -248,7 +248,6 @@ class RandomSampler(Sampler):
                     for idx in indexes:
                         idxs.append(int(self.bfs[idx][1]))
 
-                    import pdb; pdb.set_trace()
                     inputs = self.data[idxs] / 256.
                     targets = self.target[idxs]
 
@@ -396,7 +395,7 @@ def CCE_losses_fn(output, targets):
 
     return (-(output + 1e-5).log() * F.one_hot(targets, num_classes = 10)).sum(dim=1)
 
-def val_fn(model, input, targets):
+def val_fn(model, input, targets, device = 'cpu'):
     # Create a loss expression for validation/testing. The crucial difference
     # here is that we do a deterministic forward pass through the network,
     # disabling dropout layers.
@@ -404,6 +403,8 @@ def val_fn(model, input, targets):
     if not torch.is_tensor(targets):
         targets = torch.from_numpy(targets)
     model.eval()
+    input = input.to(device)
+    targets = targets.to(device)
     output = model(input)
     test_loss = CCE_loss_fn(output, targets)
 
@@ -417,7 +418,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
     print("Loading data...")
 
     device = torch.device ("cuda:0" if torch.cuda.is_available () else "cpu")
-
+    device = 'cpu' 
     network = Net().to(device)
 
     X_train, y_train, X_val, y_val, X_test, y_test = load_dataset()
@@ -464,12 +465,14 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
         if (adapt_type == 1):   # exponential
             bs = bs_begin * math.pow(mult_bs, epoch)
         bs = int(math.floor(bs))
-
+        
         if (fac == 1):
             train_dataset, validation_dataset, test_dataset, train_loader, validation_loader, test_loader = regular_data_loading(bs = bs)
 
             for batch in train_loader:
                 inputs, targets = batch
+                inputs = inputs.to(device)
+                targets = targets.to(device)
                 optimizer.zero_grad()
                 network.train()
                 output = network(inputs)
@@ -484,9 +487,10 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
             if local_bfs is not None:
                 train_loader.batch_sampler.sampler.init_bfs(local_bfs)
 
-            import pdb; pdb.set_trace()
             for batch in train_loader:
                 inputs, targets = batch
+                inputs = inputs.to(device)
+                targets = targets.to(device)
                 optimizer.zero_grad()
                 network.train()
                 output = network(inputs)
@@ -514,7 +518,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
 
             for batch in train_loader:
                 inputs, targets = batch
-                err, acc = val_fn(network, inputs, targets)
+                err, acc = val_fn(network, inputs, targets, device)
                 train_err += err
                 train_acc += acc
                 train_batches += 1
@@ -525,7 +529,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
             val_batches = 0
             for batch in validation_loader:
                 inputs, targets = batch
-                err, acc = val_fn(network, inputs, targets)
+                err, acc = val_fn(network, inputs, targets, device)
                 val_err += err
                 val_acc += acc
                 val_batches += 1
@@ -539,7 +543,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
                 test_batches = 0
                 for batch in test_loader:
                     inputs, targets = batch
-                    err, acc = val_fn(network, inputs, targets)
+                    err, acc = val_fn(network, inputs, targets, device)
                     test_err += err
                     test_acc += acc
                     test_batches += 1
@@ -575,7 +579,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
     test_batches = 0
     for batch in test_loader:
         inputs, targets = batch
-        err, acc = val_fn(network, inputs, targets)
+        err, acc = val_fn(network, inputs, targets, device)
         test_err += err
         test_acc += acc
         test_batches += 1
