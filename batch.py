@@ -11,6 +11,7 @@ import glob
 import time
 import numpy as np
 import pickle
+import copy
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
@@ -19,6 +20,12 @@ import torch.nn.functional as F
 from torchvision import datasets, transforms
 from torch.utils.data import Dataset, DataLoader, random_split
 from torch.utils.data.sampler import Sampler
+
+seed = 1721603134
+torch.manual_seed(seed)
+np.random.seed(seed)
+random.seed(seed)
+rng = torch.Generator().manual_seed(seed)
 
 #from pylearn2.datasets.zca_dataset import ZCA_Dataset
 #from pylearn2.utils import serial
@@ -161,7 +168,7 @@ class RandomSampler(Sampler):
         self.sorting_evaluations_period = sorting_evaluations_period   # increase it if sorting is too expensive
         self.sorting_evaluations_ago = sorting_evaluations_ago
 
-        self.bfs = bfs
+        self.bfs = copy.deepcopy(bfs)
         # make bfs a update method
         self.prob = prob
         self.sumprob = sumprob
@@ -469,7 +476,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
                 i = 0
                 indice = train_loader.batch_sampler.sampler.indexes
                 for idx in indice:
-                    bfs[idx][0] = losses[i] # update loss for corresponding datapoint, rely on the computed index, so index cannot be wrapped into a sampler that is invisible to the training loop
+                    train_loader.batch_sampler.sampler.bfs[idx][0] = losses[i] # update loss for corresponding datapoint, rely on the computed index, so index cannot be wrapped into a sampler that is invisible to the training loop
                     i = i + 1
 
                 #if (1):
@@ -497,7 +504,7 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
 
                             idxs = []
                             for idx in indexes:
-                                idxs.append(int(bfs[idx][1]))
+                                idxs.append(int(train_loader.batch_sampler.sampler.bfs[idx][1]))
 
                             '''
                             inputs = train_loader.dataset.dataset.train_data[idxs]
@@ -512,9 +519,10 @@ def test(model='cnn', num_epochs=50, bs_begin=16, bs_end=16, fac_begin=100, fac_
                             losses = CCE_losses_fn(output, targets)
                             i = 0
                             for idx in indexes:
-                                bfs[idx][0] = losses[i]
+                                train_loader.batch_sampler.sampler.bfs[idx][0] = losses[i]
                                 i = i + 1
 
+            bfs = copy.deepcopy(train_loader.batch_sampler.sampler.bfs)
 
         if (1): # otherwise report time only
 
