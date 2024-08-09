@@ -27,6 +27,9 @@ np.random.seed(seed)
 random.seed(seed)
 rng = torch.Generator().manual_seed(seed)
 
+# global counters
+curii = 0
+lastii = 0
 #from pylearn2.datasets.zca_dataset import ZCA_Dataset
 #from pylearn2.utils import serial
 
@@ -168,8 +171,6 @@ class RandomSampler(Sampler):
         self.sorting_evaluations_period = 100   # increase it if sorting is too expensive
         self.sorting_evaluations_ago = 2 * self.sorting_evaluations_period
 
-        self.lastii = 0
-        self.curii = 0
         self.fac = fac
         self.pp1 = pp1
         self.pp2 = pp2
@@ -215,18 +216,19 @@ class RandomSampler(Sampler):
         return loss
 
     def update(self, losses):
+        global curii
+        global lastii
         i = 0
         indice = self.indexes
         for idx in indice:
             self.bfs[idx][0] = losses[i] # update loss for corresponding datapoint, rely on the computed index, so index cannot be wrapped into a sampler that is invisible to the training loop
             i = i + 1
 
-        #if (1):
-        self.curii = self.curii + len(indice)
+        curii = curii + len(indice)
 
         if (self.pp1 > 0):
-            if (self.curii - self.lastii > self.ntraining / self.pp1):
-                self.lastii = self.curii
+            if (curii - lastii > self.ntraining / self.pp1):
+                lastii = curii
                 stopp = 0
                 iii = 0
                 bs_here = 500
@@ -248,10 +250,11 @@ class RandomSampler(Sampler):
                     for idx in indexes:
                         idxs.append(int(self.bfs[idx][1]))
 
-                    inputs = self.data[idxs] / 256.
+                    inputs = self.data[idxs] 
+                    if torch.any(inputs > 1):
+                        inputs = self.data[idxs] / 256. #manual norm for input images
                     targets = self.target[idxs]
-
-                    inputs = torch.unsqueeze(inputs, 1).to(torch.float)
+                    
                     self.model.eval()
                     output = self.model(inputs)
                     losses = CCE_losses_fn(output, targets)
